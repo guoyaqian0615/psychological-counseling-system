@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="net.suncaper.psychological.mapper.FirstVisitResultMapper">
+
+    <select id="selectVisitorHistory" resultType="net.suncaper.psychological.entity.vo.FirstVisitResultVO">
+        SELECT r.*,f.student_name studentName,f.student_id studentId,f.location location
+        FROM first_visit_result r
+        LEFT JOIN first_visit f ON r.first_visit_id = f.id
+        WHERE f.visitor_id = #{visitorId}
+        <if test="studentName != null and studentName != ''">
+            AND f.student_name LIKE CONCAT('%',#{studentName},'%')
+        </if>
+    </select>
+
+    <!-- 新增：根据id查详情，联表拿姓名、学号、初访地点 -->
+    <select id="getDetailById" resultType="net.suncaper.psychological.entity.vo.FirstVisitResultVO">
+        SELECT r.*,f.student_name studentName,f.student_id studentId,f.location location
+        FROM first_visit_result r
+                 LEFT JOIN first_visit f ON r.first_visit_id = f.id
+        WHERE r.id = #{id}
+    </select>
+
+</mapper>
