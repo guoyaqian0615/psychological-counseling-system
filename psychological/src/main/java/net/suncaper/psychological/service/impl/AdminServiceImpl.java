@@ -42,7 +42,6 @@ public class AdminServiceImpl implements AdminService {
     private final UserMapper userMapper;
     private final FirstVisitMapper firstVisitMapper;
     private final DutyMapper dutyMapper;
-    private final ExtraApplyMapper extraApplyMapper;
     private final NoticeMapper noticeMapper;
     private final TimeConfigMapper timeConfigMapper;
     private final CounselingMapper counselingMapper;
@@ -52,7 +51,6 @@ public class AdminServiceImpl implements AdminService {
     public AdminServiceImpl(UserMapper userMapper,
                             FirstVisitMapper firstVisitMapper,
                             DutyMapper dutyMapper,
-                            ExtraApplyMapper extraApplyMapper,
                             NoticeMapper noticeMapper,
                             TimeConfigMapper timeConfigMapper,
                             CounselingMapper counselingMapper,
@@ -61,7 +59,6 @@ public class AdminServiceImpl implements AdminService {
         this.userMapper = userMapper;
         this.firstVisitMapper = firstVisitMapper;
         this.dutyMapper = dutyMapper;
-        this.extraApplyMapper = extraApplyMapper;
         this.noticeMapper = noticeMapper;
         this.timeConfigMapper = timeConfigMapper;
         this.counselingMapper = counselingMapper;
@@ -548,68 +545,21 @@ public class AdminServiceImpl implements AdminService {
         return Result.success();
     }
 
-    // ===== 追加咨询审批 =====
-
     @Override
-    public Result<List<ExtraApplyVO>> getExtraApplyList() {
-        List<ExtraApply> applies = extraApplyMapper.selectList(null);
-        if (applies.isEmpty()) return Result.success(new ArrayList<>());
+    public Result<Void> deleteVisit(Long id) {
+        // 先查完整记录，用于发通知
+        FirstVisit full = firstVisitMapper.selectById(id);
+        if (full == null) return Result.error("记录不存在");
 
-        List<Long> studentIds = applies.stream()
-                .map(ExtraApply::getStudentId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
-        List<Long> counselorIds = applies.stream()
-                .map(ExtraApply::getCounselorId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
+        // 物理删除
+        firstVisitMapper.deleteById(id);
 
-        Map<Long, String> studentNameMap  = new HashMap<>();
-        Map<Long, String> counselorNameMap = new HashMap<>();
-
-        if (!studentIds.isEmpty()) {
-            LambdaQueryWrapper<User> sw = new LambdaQueryWrapper<>();
-            sw.in(User::getId, studentIds);
-            userMapper.selectList(sw).forEach(u -> studentNameMap.put(u.getId(), u.getName()));
-        }
-        if (!counselorIds.isEmpty()) {
-            LambdaQueryWrapper<User> cw = new LambdaQueryWrapper<>();
-            cw.in(User::getId, counselorIds);
-            userMapper.selectList(cw).forEach(u -> counselorNameMap.put(u.getId(), u.getName()));
+        // 已完成的初访记录无需再向学生发送"取消"通知（初访已发生）
+        if (full.getStudentId() != null && !"已完成".equals(full.getStatus())) {
+            sendNotice(full.getStudentId(), "初访预约已取消",
+                    "您好，您的初访预约记录已被管理员删除，如有疑问请联系心理中心工作人员。");
         }
 
-        List<ExtraApplyVO> voList = applies.stream().map(apply -> {
-            ExtraApplyVO vo = new ExtraApplyVO();
-            BeanUtils.copyProperties(apply, vo);
-            vo.setStudentName(studentNameMap.get(apply.getStudentId()));
-            vo.setCounselorName(counselorNameMap.get(apply.getCounselorId()));
-            return vo;
-        }).collect(Collectors.toList());
-
-        return Result.success(voList);
-    }
-
-    @Override
-    public Result<Void> auditExtra(ExtraApply extraApply) {
-        if (extraApply.getId() == null) return Result.error("ID 不能为空");
-        extraApply.setAuditTime(LocalDateTime.now());
-        extraApplyMapper.updateById(extraApply);
-
-        if ("已通过".equals(extraApply.getStatus())) {
-            String remark = StringUtils.hasText(extraApply.getAdminRemark())
-                    ? "（备注：" + extraApply.getAdminRemark() + "）" : "";
-            sendNotice(extraApply.getCounselorId(), "追加咨询申请已通过",
-                    "您提交的追加咨询申请已审批通过，可继续安排咨询。" + remark);
-            sendNotice(extraApply.getStudentId(), "咨询追加申请已通过",
-                    "您的咨询师已获批继续为您提供咨询服务。" + remark);
-        } else if ("已拒绝".equals(extraApply.getStatus())) {
-            String remark = StringUtils.hasText(extraApply.getAdminRemark())
-                    ? "，原因：" + extraApply.getAdminRemark() : "";
-            sendNotice(extraApply.getCounselorId(), "追加咨询申请已拒绝",
-                    "您提交的追加咨询申请未能通过审批" + remark + "，如有疑问请联系管理员。");
-        }
         return Result.success();
     }
 

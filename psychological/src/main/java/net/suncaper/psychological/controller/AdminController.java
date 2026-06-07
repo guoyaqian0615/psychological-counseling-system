@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.servlet.http.HttpServletResponse;
 import net.suncaper.psychological.common.Result;
 import net.suncaper.psychological.entity.*;
-import net.suncaper.psychological.entity.vo.ExtraApplyVO;
 import net.suncaper.psychological.entity.vo.FirstVisitVO;
 import net.suncaper.psychological.service.AdminService;
 import org.springframework.web.bind.annotation.*;
@@ -159,16 +158,9 @@ public class AdminController {
         return adminService.cancelVisit(id);
     }
 
-    // ===== 追加咨询审批 =====
-
-    @GetMapping("/extra/list")
-    public Result<List<ExtraApplyVO>> extraList() {
-        return adminService.getExtraApplyList();
-    }
-
-    @PostMapping("/extra/audit")
-    public Result<Void> auditExtra(@RequestBody ExtraApply extraApply) {
-        return adminService.auditExtra(extraApply);
+    @DeleteMapping("/visit/delete/{id}")
+    public Result<Void> deleteVisit(@PathVariable Long id) {
+        return adminService.deleteVisit(id);
     }
 
     // ===== 统计分析 =====

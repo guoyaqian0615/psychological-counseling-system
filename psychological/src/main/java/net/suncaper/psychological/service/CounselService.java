@@ -7,7 +7,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import net.suncaper.psychological.entity.vo.FirstVisitResultVO;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 public interface CounselService {
     // 登录
@@ -54,9 +56,19 @@ public interface CounselService {
 
     // ===================== 助理功能 =====================
 // 心理助理：查询可安排的预约（已通过初访）
-    List<FirstVisit> getWaitArrangeList();
+    List<FirstVisitResultVO> getWaitArrangeList();
     List<Counseling> counselList();
 
+    //获取全部咨询师（下拉全部数据）
+    List<User> getAllCounselor();
+
+    /**
+     * 获取今日及以后有值班记录的咨询师列表（用于安排咨询下拉框）
+     * 只返回 duty 表中 duty_date >= 今天 的 counselor 角色用户
+     */
+    List<User> getCounselorWithDuty();
+    //根据咨询师ID，查询该咨询师所有空闲日期+空闲时段（核心新接口）
+    Result<Map<String,Object>> getCounselFreeTime(Long counselorId);
     // 安排咨询
     void arrangeCounsel(Counseling counseling);
 
@@ -71,9 +83,15 @@ public interface CounselService {
 
     // ===================== 咨询师功能 =====================
     Result<Page<Counseling>> getCounselorList(Long counselorId, Integer pageNum, Integer pageSize);
+
+    /**
+     * 根据 counseling.student_id（即 user 表主键）查询学生基本信息
+     * 用于结案报告填写时自动回填学号、性别、电话、院系
+     */
+    User getStudentInfo(Long studentId);
     void submitRecord(CounselingRecord record);
     List<CounselingRecord> getRecordList(Long counselingId);
-    Result applyExtra(ExtraApply apply);
+
     void submitClosing(ClosingReport report);
     List<ClosingReport> getClosingList(Long counselorId);
 }

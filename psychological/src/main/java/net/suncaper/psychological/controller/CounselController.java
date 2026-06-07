@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/counsel")
@@ -80,40 +82,60 @@ public class CounselController {
     }
 
     // ====================== 【心理助理功能】 ======================
-//    @GetMapping("/assistant/waitArrange")
-//    public Result<List<FirstVisit>> assistantWaitArrange() {
-//        return Result.success(counselService.getWaitArrangeList());
-//    }
-//
-//    @PostMapping("/assistant/arrangeCounsel")
-//    public Result<Void> assistantArrangeCounsel(@RequestBody Counseling counseling) {
-//        counselService.arrangeCounsel(counseling);
-//        return Result.success();
-//    }
-//
-//    @GetMapping("/assistant/counselList")
-//    public Result<List<Counseling>> counselList(){
-//        return Result.success(counselService.counselList());
-//    }
-//
-//    @PostMapping("/assistant/updateCounsel")
-//    public Result<Void> assistantUpdateCounsel(@RequestBody Counseling counseling) {
-//        counselService.updateCounsel(counseling);
-//        return Result.success();
-//    }
-//
-//    @GetMapping("/assistant/closeCounsel/{id}")
-//    public Result<Void> assistantCloseCounsel(@PathVariable Long id) {
-//        counselService.closeCounsel(id);
-//        return Result.success();
-//    }
-//
-//    @GetMapping("/assistant/deleteCounsel/{id}")
-//    public Result<Void> assistantDeleteCounsel(@PathVariable Long id) {
-//        counselService.deleteCounsel(id);
-//        return Result.success();
-//    }
+    @GetMapping("/assistant/waitArrange")
+    public Result<List<FirstVisitResultVO>> assistantWaitArrange() {
+        return Result.success(counselService.getWaitArrangeList());
+    }
 
+    @PostMapping("/assistant/arrangeCounsel")
+    public Result<Void> assistantArrangeCounsel(@RequestBody Counseling counseling) {
+        counselService.arrangeCounsel(counseling);
+        return Result.success();
+    }
+
+    @GetMapping("/assistant/counselList")
+    public Result<List<Counseling>> counselList(){
+        return Result.success(counselService.counselList());
+    }
+
+    @PostMapping("/assistant/updateCounsel")
+    public Result<Void> assistantUpdateCounsel(@RequestBody Counseling counseling) {
+        counselService.updateCounsel(counseling);
+        return Result.success();
+    }
+
+    @GetMapping("/assistant/closeCounsel/{id}")
+    public Result<Void> assistantCloseCounsel(@PathVariable Long id) {
+        counselService.closeCounsel(id);
+        return Result.success();
+    }
+
+    @GetMapping("/assistant/deleteCounsel/{id}")
+    public Result<Void> assistantDeleteCounsel(@PathVariable Long id) {
+        counselService.deleteCounsel(id);
+        return Result.success();
+    }
+
+    //加载全部咨询师下拉框（原接口保留，不删）
+    @GetMapping("/assistant/getAllCounselor")
+    public Result<List<User>> getAllCounselor(){
+        return Result.success(counselService.getAllCounselor());
+    }
+
+    /**
+     * 只返回今日及以后有值班记录的咨询师（安排咨询弹窗专用）
+     * 前端调用此接口替换 getAllCounselor，确保下拉框只显示有排班的咨询师
+     */
+    @GetMapping("/assistant/getCounselorWithDuty")
+    public Result<List<User>> getCounselorWithDuty(){
+        return Result.success(counselService.getCounselorWithDuty());
+    }
+
+    //选中咨询师后回调，传咨询师ID查空闲日期时段
+    @GetMapping("/assistant/getFreeTimeByCounsel")
+    public Result<Map<String,Object>> getFreeTimeByCounsel(@RequestParam Long counselorId){
+        return counselService.getCounselFreeTime(counselorId);
+    }
     // ===================== 【咨询师功能】 =====================
     @GetMapping("/counselor/list")
     public Result getMyCounseling(
@@ -135,10 +157,16 @@ public class CounselController {
         return Result.success(counselService.getRecordList(counselingId));
     }
 
-    @PostMapping("/counselor/applyExtra")
-    public Result<Void> applyExtra(@RequestBody ExtraApply apply) {
-        return counselService.applyExtra(apply);
+    /**
+     * 根据 counseling.student_id 查询学生基本信息（学号、性别、电话、院系）
+     * 仅用于结案报告填写时自动回填，不影响其他功能
+     */
+    @GetMapping("/counselor/studentInfo")
+    public Result<User> getStudentInfo(@RequestParam Long studentId) {
+        return Result.success(counselService.getStudentInfo(studentId));
     }
+
+
 
     @PostMapping("/counselor/submitClosing")
     public Result<Void> submitClosing(@RequestBody ClosingReport report) {

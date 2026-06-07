@@ -22,32 +22,31 @@ import java.util.List;
 @Mapper
 public interface FirstVisitMapper extends BaseMapper<FirstVisit> {
 
-//    /**
-//     * 联表分页查询初访记录（含初访员姓名/电话）
-//     *
-//     * @param page        MyBatis-Plus 分页对象
-//     * @param status      状态过滤（可为空）
-//     * @param studentName 学生姓名模糊搜索（可为空）
-//     * @return 分页结果
-//     */
-////    IPage<FirstVisitVO> selectVisitWithVisitor(
-////            Page<FirstVisitVO> page,
-////            @Param("status") String status,
-////            @Param("studentName") String studentName
-////
-////    );
 
         // ====================== 1. 助理查询：已通过预约（你给的方法） ======================
-        @Select("SELECT f.id,f.student_id studentId,f.student_name studentName,f.status,fr.problem_type problemType " +
+        @Select("SELECT f.id,f.student_id studentId,f.student_name studentName," +
+                "fr.problem_type problemType,fr.crisis_level crisisLevel " +
                 "FROM first_visit f LEFT JOIN first_visit_result fr ON f.id=fr.first_visit_id " +
                 "WHERE f.status='已通过'")
         List<FirstVisitResultVO> selectWaitArrangeVO();
 
+
         // ====================== 2. 分页查询：初访记录+初访员信息 ======================
+        @Select("SELECT f.*, v.name visitorName, v.phone visitorPhone " +
+                "FROM first_visit f " +
+                "LEFT JOIN visitor v ON f.visitor_id = v.id " +
+                "WHERE 1=1 " +
+                "AND (${status} IS NULL OR f.status = #{status}) " +
+                "AND (${studentName} IS NULL OR f.student_name LIKE CONCAT('%', #{studentName}, '%'))")
         IPage<FirstVisitVO> selectVisitWithVisitor(
                 Page<FirstVisitVO> page,
                 @Param("status") String status,
                 @Param("studentName") String studentName
         );
+                //!新增【学生当前预约VO查询】!
+        List<FirstVisitVO> getCurrentByStudentId(@Param("studentId") Long studentId);
+        //!新增【学生全部历史预约VO查询】!
+        List<FirstVisitVO> getHistoryByStudentId(@Param("studentId") Long studentId);
+
 
 }

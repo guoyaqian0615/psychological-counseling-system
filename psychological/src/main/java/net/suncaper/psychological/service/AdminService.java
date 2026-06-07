@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.servlet.http.HttpServletResponse;
 import net.suncaper.psychological.common.Result;
 import net.suncaper.psychological.entity.*;
-import net.suncaper.psychological.entity.vo.ExtraApplyVO;
 import net.suncaper.psychological.entity.vo.FirstVisitVO;
 
 import java.util.List;
@@ -47,6 +46,8 @@ public interface AdminService {
     Result<Void> addVisit(FirstVisit firstVisit);
     Result<Void> rescheduleVisit(FirstVisit firstVisit);
     Result<Void> cancelVisit(Long id);
+    /** 物理删除初访预约记录，同时向学生发送取消通知 */
+    Result<Void> deleteVisit(Long id);
 
     /** 今天或未来有值班安排的初访员（去重） */
     Result<List<User>> getTodayDutyVisitors();
@@ -56,10 +57,6 @@ public interface AdminService {
      * 并填充每个时段的已预约人数（bookedCount）。
      */
     Result<List<Duty>> getUserDutyDate(Long userId);
-
-    // ===== 追加咨询审批 =====
-    Result<List<ExtraApplyVO>> getExtraApplyList();
-    Result<Void> auditExtra(ExtraApply extraApply);
 
     // ===== 统计分析 =====
     Result<List<Map<String, Object>>> getStatSummary(String type, String startDate, String endDate);

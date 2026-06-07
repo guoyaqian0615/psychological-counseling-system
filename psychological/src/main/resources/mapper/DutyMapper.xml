@@ -41,4 +41,8 @@
         </foreach>
     </insert>
 
+    <!--  新增：排班+咨询师姓名联查，学生预约页面使用  -->
+    <select id="getAllDutyWithUserName" resultType="net.suncaper.psychological.entity.vo.DutyVO"> SELECT d.id, d.user_id AS userId, u.name AS userName, d.duty_date AS dutyDate, d.start_time AS startTime, d.end_time AS endTime, d.status, d.max_person AS maxPerson, d.remark FROM duty d LEFT JOIN user u ON d.user_id = u.id WHERE d.status = '1' </select>
+    <select id="getVisitorDutyOnly" resultType="net.suncaper.psychological.entity.vo.DutyVO"> SELECT d.id, d.user_id as userId, u.name as userName, d.duty_date as dutyDate, d.start_time as startTime, d.end_time as endTime FROM duty d LEFT JOIN `user` u ON d.user_id = u.id WHERE u.role = 'visitor' ORDER BY d.duty_date </select>
+
 </mapper>
