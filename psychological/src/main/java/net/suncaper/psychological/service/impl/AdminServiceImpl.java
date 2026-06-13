@@ -1122,23 +1122,22 @@ public class AdminServiceImpl implements AdminService {
         }
     }
 
-    /**
-     * 填充 4 格行：[标签1 | 值1 | 标签2 | 值2]
-     * 批量给 4 个单元格统一设置文本、样式、宽度，复用代码、保证排版一致。
-     */
+
+
     private void fillDocRow4(XWPFTableRow row, int[] cw, String labelBg,
-                              String lbl1, String val1, String lbl2, String val2) {
+                             String lbl1, String val1, String lbl2, String val2) {
         setDocCell(row.getCell(0), lbl1, true,  labelBg, cw[0]);
         setDocCell(row.getCell(1), val1, false, null,    cw[1]);
         setDocCell(row.getCell(2), lbl2, true,  labelBg, cw[2]);
         setDocCell(row.getCell(3), val2, false, null,    cw[3]);
     }
-
     /**
      * 填充 2 格行：[标签 | 值（水平跨后 3 列）]，并设置行最小高度。
      *
      * @param heightTwips 行高下限（twips；≈20 twips/pt，0 表示不设置）
      */
+
+
     private void fillDocRow2Merged(XWPFTableRow row, int[] cw, String labelBg,
                                    String label, String value, int heightTwips) {
         // 标签格（列0）
@@ -1220,12 +1219,16 @@ public class AdminServiceImpl implements AdminService {
     }
 
     /** 统一设置四边细边框（Excel 用） */
+
+
     private void setBorder(CellStyle style) {
         style.setBorderBottom(BorderStyle.THIN);
         style.setBorderTop(BorderStyle.THIN);
         style.setBorderLeft(BorderStyle.THIN);
         style.setBorderRight(BorderStyle.THIN);
     }
+
+
 
     private String str(Object val) {
         return val != null ? val.toString() : "";

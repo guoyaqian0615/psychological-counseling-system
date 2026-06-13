@@ -31,7 +31,6 @@ public interface FirstVisitMapper extends BaseMapper<FirstVisit> {
         List<FirstVisitResultVO> selectWaitArrangeVO();
 
 
-        // ====================== 2. 分页查询：初访记录+初访员信息 ======================
         @Select("SELECT f.*, v.name visitorName, v.phone visitorPhone " +
                 "FROM first_visit f " +
                 "LEFT JOIN visitor v ON f.visitor_id = v.id " +

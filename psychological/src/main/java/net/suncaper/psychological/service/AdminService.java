@@ -68,10 +68,10 @@ public interface AdminService {
      *
      * @param studentName   学生姓名（模糊，可为空）
      * @param counselorName 咨询师姓名（模糊，可为空）
-     * @param problemType   问题类型（模糊，可为空）  ← NEW
-     * @param startDate     结案日期起始（YYYY-MM-DD，可为空）
-     * @param endDate       结案日期截止（YYYY-MM-DD，可为空）
-     * @param response      HTTP 响应，直接写入 ZIP 流
+     * @param problemType   问题类型（模糊，可为
+     * @param startDate
+     * @param endDate
+     * @param response
      */
     void batchDownloadReports(String studentName,
                               String counselorName,
