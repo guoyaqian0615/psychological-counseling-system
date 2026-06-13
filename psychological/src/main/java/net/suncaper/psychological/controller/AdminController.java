@@ -12,9 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import net.suncaper.psychological.entity.vo.DutyVO;
-/**负责接收前端请求、
- * 转发调用 AdminService 业务层，
- * 划分了登录、用户管理、时间配置、值班管理、初访预约、统计分析、报告下载七大模块。*/
+
 @RestController
 @RequestMapping("/admin")
 public class AdminController {
@@ -25,11 +23,7 @@ public class AdminController {
         this.adminService = adminService;
     }
 
-    // ===== 登录 =====
-//    请求方式：POST
-//路径：/admin/login
-//参数：@RequestBody User user → 前端传 JSON 账号密码实体
-//功能：管理员登录，校验账号密码，返回登录用户信息。
+
 
     @PostMapping("/login")
     public Result<User> login(@RequestBody User user) {
@@ -43,11 +37,7 @@ public class AdminController {
         return adminService.getUserList(role);
     }
 
-    /**
-     * 通过学号（username）精确查询学生信息。
-     * 管理员手动新增初访预约时使用。
-     * GET /admin/user/student?username=2021001234
-     */
+
     @GetMapping("/user/student")
     public Result<User> findStudent(@RequestParam String username) {
         return adminService.findStudentByUsername(username);
@@ -138,10 +128,6 @@ public class AdminController {
         return adminService.getTodayDutyVisitors();
     }
 
-    /**
-     * 根据初访员 ID 查询其今天及之后的值班记录，含每个时段的已预约人数。
-     * GET /admin/visit/get-duty-date/{userId}
-     */
     @GetMapping("/visit/get-duty-date/{userId}")
     public Result<List<Duty>> getUserDutyDate(@PathVariable Long userId) {
         return adminService.getUserDutyDate(userId);
@@ -190,10 +176,6 @@ public class AdminController {
 
     // ===== 结案报告批量下载 =====
 
-    /**
-     * GET /admin/report/batchDownload
-     * ★ 新增 problemType 查询参数，支持按问题类型筛选结案报告。
-     */
     @GetMapping("/report/batchDownload")
     public void batchDownloadReports(
             @RequestParam(required = false) String studentName,
