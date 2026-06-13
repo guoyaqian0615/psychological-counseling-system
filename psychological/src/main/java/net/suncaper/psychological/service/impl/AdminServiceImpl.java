@@ -331,11 +331,6 @@ public class AdminServiceImpl implements AdminService {
         LocalTime current = LocalTime.of(startHour, 0);
         // 当日排班最晚截止时间（整点）
         LocalTime limit   = LocalTime.of(endHour, 0);
-        // 循环生成排班
-//        假设 startHour=8、endHour=12、duration=30、interval=10
-//        08:00 ~ 08:30
-//        08:40 ~ 09:10
-//…… 直到结束时间超过 12:00 停止
         while (true) {
             // 计算当前时段结束时间
             LocalTime endTime = current.plusMinutes(duration);
@@ -553,13 +548,6 @@ public class AdminServiceImpl implements AdminService {
  */
         wrapper.ge(Duty::getDutyDate, today);
         List<Duty> dutyList = dutyMapper.selectList(wrapper);
-//执行查询，拿到今日及往后所有排班数据集合。
-        /**
-         * 使用 Java Stream 流处理：
-         * map(Duty::getUserId)：从排班记录中提取所有咨询师 ID
-         * distinct()：去重（同一个人多条排班只保留一个 ID）
-         * collect(Collectors.toList())：把去重后的 ID 收集成 List<Long>
-         * */
         List<Long> userIds = dutyList.stream()
                 .map(Duty::getUserId).distinct().collect(Collectors.toList());
 //        如果今日及往后没有任何排班（ID 集合为空）
@@ -590,9 +578,6 @@ public class AdminServiceImpl implements AdminService {
         List<Duty> list = dutyMapper.selectList(wrapper);
 
         for (Duty duty : list) {
-//            遍历每一条排班记录，逐个统计当前时段已预约人数。
-//            ：如果排班的开始时间 / 结束时间为空
-//            直接把已预约人数 bookedCount 设为 0，跳过后续统计逻辑。
             if (duty.getStartTime() == null || duty.getEndTime() == null) {
                 duty.setBookedCount(0);
                 continue;
@@ -667,30 +652,14 @@ public class AdminServiceImpl implements AdminService {
 
     // ===== 统计分析 ==================================================================================
 
-    /**
-     * 基于 ClosingReport 表，支持按学生 / 咨询师 / 问题类型三个维度汇总。
-     第一，按学生统计：先批量查询学生学号做缓存，再按学生 ID 分组，统计每个人的咨询总次数和首次咨询时间，最后按姓名排序；
-     第二，按咨询师统计：先读取系统预设的单次咨询时长，分组后统计咨询师接待的学生数量、总咨询次数，并换算出总服务时长；
-     第三，按问题类型统计：直接按问题名称分组计数，统计每类问题的咨询人次，并按人次从高到低排序。
-     所有统计都使用 Java Stream 流实现，计算完成后统一格式返回，供给前端页面展示和 Excel 导出使用。
-     */
     @Override
-//    这是数据统计接口，根据传入的类型和时间范围，
-//    对结案报告做三类统计：按学生统计咨询情况、
-//    按咨询师统计工作量、按心理问题类型统计分布，
-//    结果整理成前端易解析的列表格式返回。
     public Result<List<Map<String, Object>>> getStatSummary(String type, String startDate, String endDate) {
 
-        //        构建查询条件：根据结案日期做范围筛选
-        //ge：大于等于（开始日期）
-        //le：小于等于（结束日期）
-        //查出时间范围内所有结案报告数据，作为后续统计数据源
         LambdaQueryWrapper<ClosingReport> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(startDate)) wrapper.ge(ClosingReport::getEndDate, startDate);
         if (StringUtils.hasText(endDate))   wrapper.le(ClosingReport::getEndDate, endDate);
         List<ClosingReport> reports = closingReportMapper.selectList(wrapper);
 
-        // ① 按学生汇总
         if ("student".equals(type)) {
             List<Long> sids = reports.stream()
                     .map(ClosingReport::getStudentId).filter(Objects::nonNull)
@@ -780,16 +749,6 @@ public class AdminServiceImpl implements AdminService {
         return Result.success(new ArrayList<>());
     }
 
-    /**
-     * Apache POI
-     * 这个方法是心理咨询系统统计数据 Excel 导出的核心方法，
-     * 支持学生、咨询师、咨询问题类型三类统计数据的 Excel 导出，可搭配时间范围筛选。
-     * 首先我会调用已有的统计方法，根据前端传入的类型和时间范围，获取聚合好的统计数据；
-     * 接着根据统计类型，动态配置 Excel 的表头、取值字段和列宽，实现一套代码适配多类报表。
-     * 然后我提前定义了 4 套统一的单元格样式
-     * ，保证全表样式统一；再创建 Excel 工作表，设置列宽，生成合并后的大标题和带样式的表头行。
-     * 之后循环遍历统计数据，自动区分文本和数字格式，逐行写入 Excel 单元格；、最后对文件名做编码处理，配置 HTTP 响应头触发浏览器下载，同时捕获 IO 异常保证程序稳定。
-     */
     @Override
     public void exportStatExcel(String type, String startDate, String endDate,
                                 HttpServletResponse response) {
@@ -916,13 +875,6 @@ public class AdminServiceImpl implements AdminService {
 
     // ===== 结案报告批量下载 =====
 
-    /**
-     这个方法实现结案报告批量打包下载功能。
-     首先根据前端传入的姓名、问题类型、时间范围等条件，筛选出对应的结案报告；如果没有数据，直接返回提示。
-     我先批量查询所有学生学号并缓存，避免循环查库。
-     接着设置响应头，告知浏览器下载 ZIP 压缩包。
-     最后遍历每一份报告，调用工具方法单独生成 Word 文档，再把所有 Word 文件打包进 ZIP，完成批量下载。。
-     */
     @Override
     public void batchDownloadReports(String studentName,
                                      String counselorName,
@@ -949,11 +901,6 @@ public class AdminServiceImpl implements AdminService {
             return;
         }
 
-        // ★ 批量预取学号（username），避免循环内 N 次单条查询
-        //通过 Stream 提取所有不重复的学生 ID；
-        //批量查询用户表，构建 学生ID → 学号 的映射集合；
-        //核心优化：避免循环中反复单条查库，大幅提升接口性能。
-        //
         List<Long> studentIds = reports.stream()
                 .map(ClosingReport::getStudentId)
                 .filter(Objects::nonNull).distinct()
@@ -966,8 +913,6 @@ public class AdminServiceImpl implements AdminService {
         }
 
         try {
-//            设置 ZIP 下载响应头声明响应内容为 ZIP 压缩包；
-//配置下载头，编码处理中文文件名，防止乱码，触发浏览器下载。
             response.setContentType("application/zip");
             response.setHeader("Content-Disposition",
                     "attachment;filename=" + java.net.URLEncoder.encode("结案报告.zip", "UTF-8"));
