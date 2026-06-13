@@ -23,7 +23,7 @@ import java.util.List;
 public interface FirstVisitMapper extends BaseMapper<FirstVisit> {
 
 
-        // ====================== 1. 助理查询：已通过预约（你给的方法） ======================
+        // ====================== 1. 助理查询：已通过预约======================
         @Select("SELECT f.id,f.student_id studentId,f.student_name studentName," +
                 "fr.problem_type problemType,fr.crisis_level crisisLevel " +
                 "FROM first_visit f LEFT JOIN first_visit_result fr ON f.id=fr.first_visit_id " +

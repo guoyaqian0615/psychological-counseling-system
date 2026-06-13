@@ -12,7 +12,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import net.suncaper.psychological.entity.vo.DutyVO;
-
+/**负责接收前端请求、
+ * 转发调用 AdminService 业务层，
+ * 划分了登录、用户管理、时间配置、值班管理、初访预约、统计分析、报告下载七大模块。*/
 @RestController
 @RequestMapping("/admin")
 public class AdminController {
@@ -24,6 +26,10 @@ public class AdminController {
     }
 
     // ===== 登录 =====
+//    请求方式：POST
+//路径：/admin/login
+//参数：@RequestBody User user → 前端传 JSON 账号密码实体
+//功能：管理员登录，校验账号密码，返回登录用户信息。
 
     @PostMapping("/login")
     public Result<User> login(@RequestBody User user) {

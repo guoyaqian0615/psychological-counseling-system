@@ -51,7 +51,9 @@ public class CounselServiceImpl implements CounselService {
     }
 
     // ===================== 登录逻辑 =====================
-
+    //参数非空校验：账号、密码、角色为空 → 直接返回错误；
+    //格式校验：判断账号是否为纯数字（学号 / 工号规则）；
+    //数据库查询：根据账号 + 密码查询 user 表；
     @Override
     public Result login(User user) {
         if (user.getUsername() == null || user.getPassword() == null || user.getRole() == null) {
@@ -83,7 +85,13 @@ public class CounselServiceImpl implements CounselService {
     }
 
     // ===================== 初访员 =====================
-
+    //查询待处理初访列表
+    //只查询 status = 已通过、且还没有分配初访员的预约记录。
+    //实现：
+    //使用 LambdaQueryWrapper 构造查询条件；
+    //固定状态为「已通过」；
+    //可根据初访员 ID、日期做筛选；
+    //按申请时间倒序排列。
     @Override
     public List<FirstVisit> getVisitorWaitList(Long visitorId, String visitDate) {
         LambdaQueryWrapper<FirstVisit> wrapper = new LambdaQueryWrapper<>();
@@ -101,7 +109,10 @@ public class CounselServiceImpl implements CounselService {
         wrapper.orderByDesc(FirstVisit::getApplyTime);
         return firstVisitMapper.selectList(wrapper);
     }
-
+    //领取初访任务
+    //根据 ID 查询初访记录，判断记录是否存在；
+    //强制校验：只有状态为「已通过」才能领取；
+    //给这条记录绑定当前初访员 ID，执行数据库更新。
     @Override
     public void assignFirstVisitToVisitor(Long firstVisitId, Long visitorId) {
         FirstVisit firstVisit = firstVisitMapper.selectById(firstVisitId);
@@ -111,7 +122,10 @@ public class CounselServiceImpl implements CounselService {
         firstVisit.setVisitorId(visitorId);
         firstVisitMapper.updateById(firstVisit);
     }
-
+    //提交初访结果
+    //校验必须关联合法的初访 ID；
+    //将初访结果数据插入 first_visit_result 表；
+    //同步更新主表状态：把原初访记录改为「已完成」
     @Override
     public void submitFirstVisitResult(FirstVisitResult result) {
         if (result.getFirstVisitId() == null)
@@ -125,12 +139,13 @@ public class CounselServiceImpl implements CounselService {
         firstVisit.setStatus("已完成");
         firstVisitMapper.updateById(firstVisit);
     }
-
+    //查询初访历史记录
+    //调用 Mapper 自定义 SQL，支持按初访员、学生姓名模糊查询，查询单条详情
     @Override
     public List<FirstVisitResultVO> getVisitorHistory(Long visitorId, String studentName) {
         return firstVisitResultMapper.selectVisitorHistory(visitorId, studentName);
     }
-
+    //
     @Override
     public FirstVisitResult getVisitorHistoryDetail(Long id) {
         return firstVisitResultMapper.selectById(id);
@@ -149,12 +164,17 @@ public class CounselServiceImpl implements CounselService {
      *   条件2：counseling.status 为 NULL（空）             （'进行中' 和 '已结案' 均排除，只允许 NULL）
      *   条件3：first_visit_result.conclusion = '安排咨询' （Java 层过滤）
      */
+    //查询待安排咨询列表
+    //筛选「可以安排正式咨询」的学生，三层过滤：
+    //初访记录状态 = 已完成；
+    //初访结论 = 安排咨询；
+    //该学生目前没有正在进行 / 已结案的咨询（防止重复安排）。
     @Override
     public List<FirstVisitResultVO> getWaitArrangeList() {
         List<FirstVisitResultVO> allList = firstVisitResultMapper.selectWaitArrangeVO();
         if (allList == null || allList.isEmpty()) return new ArrayList<>();
 
-        // 条件2：counseling.status 非 NULL/空的学生全部排除：
+        // 条件1：counseling.status 非 NULL/空的学生全部排除：
         //   '进行中' → 正在咨询，不重复安排；
         //   '已结案' → 已完成咨询，不重新安排；
         //   NULL     → 尚未安排，允许出现在待安排列表。
@@ -180,6 +200,7 @@ public class CounselServiceImpl implements CounselService {
      *   '已结案' → 正常显示，修改按钮禁用（前端控制）；
      *   NULL     → 属于"待安排"，不出现在此列表（显示在预约列表）。
      */
+
     @Override
     public List<Counseling> counselList() {
         LambdaQueryWrapper<Counseling> wrapper = new LambdaQueryWrapper<>();
@@ -214,6 +235,16 @@ public class CounselServiceImpl implements CounselService {
      *
      * ★ 新增：安排成功后向学生发送站内通知。
      */
+    //安排咨询
+    /*
+    入参校验：日期、时段、师生 ID 不能为空；
+    解析前端传的时间字符串，拆分日期、起止时间；
+    去 duty 表查询该时段最大预约人数 maxPerson；
+    查重：判断该学生是否已有未安排的咨询记录；
+    人数校验：统计该时段已预约人数，达到上限直接抛出异常（人数已满）；
+    默认设置总周数 = 8（业务规则：固定 8 次咨询）；
+    自动发送站内通知给学生。
+    */
     @Override
     public void arrangeCounsel(Counseling counseling) {
         if (counseling.getStartDate() == null)
@@ -299,14 +330,17 @@ public class CounselServiceImpl implements CounselService {
                 location);
         sendNotice(counseling.getStudentId(), "咨询已安排", content);
     }
-
+        //查询咨询师列表
     @Override
     public List<User> getAllCounselor() {
         QueryWrapper<User> wrapper = new QueryWrapper<>();
         wrapper.eq("role", "counselor");
         return userMapper.selectList(wrapper);
     }
-
+    //查询 duty 值班表，筛选 今日及之后 的值班记录；
+    //提取这些值班人员的 ID；
+    //根据 ID + 角色（咨询师）查询用户表；
+    //最终返回：未来有排班的咨询师，前端下拉框使用
     @Override
     public List<User> getCounselorWithDuty() {
         LocalDate today = LocalDate.now();
@@ -332,7 +366,7 @@ public class CounselServiceImpl implements CounselService {
      *
      * 设计思路：
      *   管理员在 duty 表为每位咨询师安排若干组"8次固定时间"，
-     *   每组（轨道）由 8 条连续每周记录组成，构成一个排班循环。
+     *   每组由 8 条连续每周记录组成，构成一个排班循环。
      *   本接口返回每个循环的"第一天"供前端下拉框选择。
      *
      * 识别规则：
@@ -341,6 +375,12 @@ public class CounselServiceImpl implements CounselService {
      *   3. 容量检查只在循环起点做：已进行中的预约数 < max_person 才放入下拉框。
      *      · 只统计 status='进行中' 的咨询（已结案释放名额，NULL 状态不计入）。
      */
+    //查询咨询师空闲时段
+    //查询该咨询师今日往后所有值班记录；
+    //统计每个时段已预约人数；
+    //按照「时间段 + 星期」划分排班循环（每周固定班次）；
+    //规则：已预约人数 ≥ maxPerson（最大人数） → 判定为已满，不返回；
+    //只返回「值班 + 人数未满」的时段给前端，前端日历据此禁用日期。
     @Override
     public Result<Map<String, Object>> getCounselFreeTime(Long counselorId) {
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -420,6 +460,11 @@ public class CounselServiceImpl implements CounselService {
      * ★ 新增：若修改了咨询师或咨询时间，需验证新时段未超出 duty.max_person 限制，
      *   统计时排除当前记录自身（ne id），避免把自己算进已预约人数。
      */
+    //先查出原咨询记录；
+    //如果更换咨询师 / 更换时间，重新做 maxPerson 人数校验；
+    //统计人数时排除当前这条记录；
+    //更新数据库；
+    //发送「咨询已修改」通知给学生。
     @Override
     public void updateCounsel(Counseling counseling) {
         // 查出原记录（确保拿到 studentId）
@@ -479,7 +524,7 @@ public class CounselServiceImpl implements CounselService {
                                 + " 人），请选择其他时段");
             }
         }
-        // ─────────────────────────────────────────────────────────────────
+
 
         // 执行更新（只更新非 null 字段）
         counselingMapper.updateById(counseling);
@@ -500,7 +545,8 @@ public class CounselServiceImpl implements CounselService {
                 location);
         sendNotice(existing.getStudentId(), "咨询安排已更新", content);
     }
-
+    //closeCounsel：将咨询状态改为「已结案」；
+    //deleteCounsel：直接删除咨询记录。
     @Override
     public void closeCounsel(Long id) {
         Counseling counseling = counselingMapper.selectById(id);
@@ -515,7 +561,9 @@ public class CounselServiceImpl implements CounselService {
     }
 
     // ===================== 咨询师 =====================
-
+    //分页查询咨询列表
+    //根据咨询师 ID 分页查询咨询列表；
+    //一次性批量查询所有分次咨询记录，统计每条咨询的总次数，回填到列表中，提升性能。
     @Override
     public Result<Page<Counseling>> getCounselorList(Long counselorId, Integer pageNum, Integer pageSize) {
         Page<Counseling> page = new Page<>(pageNum, pageSize);
@@ -550,11 +598,14 @@ public class CounselServiceImpl implements CounselService {
      * 根据 counseling.student_id（即 user 表 id）查询学生信息
      * 返回 username(学号)、gender、phone、department，供结案报告自动回填
      */
+    //查询学生信息
+    //根据学生 ID 查询用户表，用于结案报告自动回填姓名、性别、电话、院系。
     @Override
     public User getStudentInfo(Long studentId) {
         return userMapper.selectById(studentId);
     }
-
+    //提交
+    //校验咨询次数、状态非空，插入 counseling_record 表
     @Override
     public void submitRecord(CounselingRecord record) {
         if (record.getTimes() == null)
@@ -563,7 +614,8 @@ public class CounselServiceImpl implements CounselService {
             throw new RuntimeException("必须填写咨询状态");
         counselingRecordMapper.insert(record);
     }
-
+    //查询咨询记录列表
+    //根据咨询 ID，按咨询次序升序展示。
     @Override
     public List<CounselingRecord> getRecordList(Long counselingId) {
         LambdaQueryWrapper<CounselingRecord> wrapper = new LambdaQueryWrapper<>();
@@ -572,7 +624,9 @@ public class CounselServiceImpl implements CounselService {
         return counselingRecordMapper.selectList(wrapper);
     }
 
-
+    //提交结案报告
+    //插入结案报告数据；
+    //同步将咨询主表状态改为「已结案」。
     @Override
     public void submitClosing(ClosingReport report) {
         report.setCreateTime(LocalDateTime.now());
@@ -583,7 +637,8 @@ public class CounselServiceImpl implements CounselService {
         counseling.setStatus("已结案");
         counselingMapper.updateById(counseling);
     }
-
+    //查询结案报告列表
+    //按咨询师 ID、创建时间倒序查询
     @Override
     public List<ClosingReport> getClosingList(Long counselorId) {
         LambdaQueryWrapper<ClosingReport> wrapper = new LambdaQueryWrapper<>();

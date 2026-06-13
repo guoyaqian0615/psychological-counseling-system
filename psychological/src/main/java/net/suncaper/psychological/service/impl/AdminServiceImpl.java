@@ -48,6 +48,7 @@ public class AdminServiceImpl implements AdminService {
     private final ClosingReportMapper closingReportMapper;
     private final CounselingRecordMapper counselingRecordMapper;
 
+//自动把对应的 Mapper 接口实例注入进来，让当前 Service 能调用数据库操作。
     public AdminServiceImpl(UserMapper userMapper,
                             FirstVisitMapper firstVisitMapper,
                             DutyMapper dutyMapper,
@@ -66,19 +67,31 @@ public class AdminServiceImpl implements AdminService {
         this.counselingRecordMapper = counselingRecordMapper;
     }
 
-    // ===== 登录 =====
-
+    // ===== 登录 =======================================================================
+//重写了 login 登录方法接收前端传来的账号密码，校验工号、密码
+// → 查询数据库管理员账号 →
+// 比对密码 →
+// 返回登录结果，统一用自定义 Result 封装返回值。
     @Override
     public Result<User> login(User user) {
+//        前端传过来的登录表单数据（用户名 / 工号、密码）
         if (!StringUtils.hasText(user.getUsername()) || !user.getUsername().matches("^[0-9]+$")) {
             return Result.error("工号必须为数字");
         }
+//        StringUtils.hasText：判断工号非空、非空白字符
+//        matches("^[0-9]+$")：正则校验，要求纯数字（工号规则）
+//        不满足则直接返回错误提示
         if (!StringUtils.hasText(user.getPassword())) {
             return Result.error("密码不能为空");
         }
+//        构建查询条件（MyBatis-Plus 条件构造器）
+//        新建一个空的查询条件容器，后续所有查询规则都写在这个 wrapper 里eq() = 等于（对应 SQL =）
+//        WHERE username = '前端传的工号' AND role = 'admin'
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(User::getUsername, user.getUsername())
                 .eq(User::getRole, "admin");
+//        selectOne：根据条件查单条数据
+//        userMapper就是之前构造器注入的 Mapper，负责和数据库 user 表交互。
         User loginUser = userMapper.selectOne(wrapper);
         if (loginUser == null) {
             return Result.error("账号或密码错误");
@@ -90,10 +103,14 @@ public class AdminServiceImpl implements AdminService {
         return Result.success(loginUser);
     }
 
-    // ===== 用户管理 =====
+    // ===== 用户管理 ==============================================================
 
     @Override
     public Result<List<User>> getUserList(String role) {
+        //接收前端传来的角色参数 role，动态拼接查询条件：
+        //传了角色：只查询该角色的用户
+        //没传角色：查询非学生的所有用户
+        //调用数据库查询，得到用户集合
         LambdaQueryWrapper<User> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(role)) {
             wrapper.eq(User::getRole, role);
@@ -106,6 +123,7 @@ public class AdminServiceImpl implements AdminService {
     }
 
     @Override
+//    根据学号精准查询单个学生信息，做参数校验、条件查询、脱敏后返回结果。
     public Result<User> findStudentByUsername(String username) {
         if (!StringUtils.hasText(username)) {
             return Result.error("请输入学号");
@@ -123,6 +141,7 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public Result<Void> saveOrUpdateUser(User user) {
+//        新增 / 编辑用户二合一接口，根据id判断是新增还是修改
         if (!StringUtils.hasText(user.getUsername())) {
             return Result.error("账号不能为空");
         }
@@ -135,6 +154,8 @@ public class AdminServiceImpl implements AdminService {
         } else {
             user.setPassword(null);
             userMapper.updateById(user);
+//            把密码置空，不更新数据库里的原有密码。
+//            updateById()：根据主键id更新其他字段。
         }
         return Result.success();
     }
@@ -145,11 +166,13 @@ public class AdminServiceImpl implements AdminService {
         return Result.success();
     }
 
-    // ===== 时间配置 =====
+    // ===== 时间配置 ======================================================================================
 
     @Override
     public Result<TimeConfig> getTimeConfig() {
+        // selectList(null)：不加任何条件，查询表中所有数据
         List<TimeConfig> list = timeConfigMapper.selectList(null);
+        // 表中无数据 → 返回空的 TimeConfig 对象；有数据 → 返回第一条配置
         return Result.success(list.isEmpty() ? new TimeConfig() : list.get(0));
     }
 
@@ -163,7 +186,7 @@ public class AdminServiceImpl implements AdminService {
         return Result.success();
     }
 
-    // ===== 值班管理 =====
+    // ===== 值班管理 ==================================================================
 
     @Override
     public Result<List<Duty>> getDutyList() {
@@ -172,48 +195,63 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public Result<Page<DutyVO>> getDutyPage(Integer pageNum, Integer pageSize) {
+//        pageNum：当前页码
+//        pageSize：每页展示条数
+//        MyBatis-Plus 分页核心对象，传入页码、页大小，自动帮你处理分页逻辑（分页查询、统计总记录数）。
         Page<DutyVO> page = new Page<>(pageNum, pageSize);
         QueryWrapper<Duty> wrapper = new QueryWrapper<>();
+//        空条件构造器，代表不做额外筛选，查询全量数据。
         IPage<DutyVO> voPage = dutyMapper.selectDutyVOPage(page, wrapper);
+//        selectDutyVOPage：自定义分页查询方法（不是 MP 自带方法，需要在 Mapper 接口 / XML 中手写 SQL）
+//        关联查询、数据封装成 DutyVO（视图实体，专门给前端展示）
+//        返回分页结果集 IPage
         return Result.success((Page<DutyVO>) voPage);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+
+//    并根据用户角色（普通人员 / 初访员 / 咨询师）执行不同排班逻辑，
+//    自动计算值班结束时间、批量生成多周排班。
     public Result<Void> saveDuty(Duty duty) {
+        //        校验值班人员、值班日期、开始时间不能为空，缺失则直接返回错误。
         if (duty.getUserId() == null) return Result.error("请选择人员");
         if (duty.getDutyDate() == null) return Result.error("请选择值班日期");
         if (duty.getStartTime() == null) return Result.error("请选择开始时间");
 
+        //查询系统时间配置表，获取全局值班时段规则；
         TimeConfig config = timeConfigMapper.selectList(null).stream().findFirst().orElse(null);
         if (config == null) return Result.error("系统未配置时段规则，请先配置时间参数");
-
         LocalTime limitStart = LocalTime.of(config.getDailyStartHour(), 0);
         LocalTime limitEnd   = LocalTime.of(config.getDailyEndHour(), 0);
         int durationMin      = config.getSingleDuration();
 
+        // 获取duty对象中的时分秒时间，类型为 java.time.LocalTime（无时区、仅时分秒）
+        // truncatedTo(ChronoUnit.MINUTES);时间截断：将秒、毫秒部分直接置 0，只保留到分钟。
         LocalTime userStart = duty.getStartTime().truncatedTo(ChronoUnit.MINUTES);
         duty.setStartTime(userStart);
         if (userStart.isBefore(limitStart) || userStart.isAfter(limitEnd)) {
             return Result.error("开始时间超出有效范围，有效时段：" + limitStart + "~" + limitEnd);
         }
-
+        // 在起始时间基础上，累加指定分钟数，得到实际结束时间
         LocalTime realEnd = userStart.plusMinutes(durationMin);
         if (realEnd.isAfter(limitEnd)) {
             return Result.error("结束时间（" + realEnd + "）超出每日截止时间（" + limitEnd + "），请提前开始时间");
         }
         duty.setEndTime(realEnd);
 
+        //检验是否重复设置
         User user = userMapper.selectById(duty.getUserId());
         if (user == null) return Result.error("所选用户不存在");
-
+        // 构建查询条件：校验同一用户、同一天，是否存在时间重叠的其他排班
         if (duty.getId() != null) {
             LambdaQueryWrapper<Duty> overlapCheck = new LambdaQueryWrapper<>();
-            overlapCheck.eq(Duty::getUserId, duty.getUserId())
-                        .eq(Duty::getDutyDate, duty.getDutyDate())
-                        .lt(Duty::getStartTime, realEnd)
-                        .gt(Duty::getEndTime, userStart)
-                        .ne(Duty::getId, duty.getId());
+            overlapCheck.eq(Duty::getUserId, duty.getUserId())        // 同一用户
+                    .eq(Duty::getDutyDate, duty.getDutyDate())      // 同一天
+                    .lt(Duty::getStartTime, realEnd)               // 已有排班开始时间 < 本次结束时间
+                    .gt(Duty::getEndTime, userStart)               // 已有排班结束时间 > 本次开始时间
+                    .ne(Duty::getId, duty.getId());                // 排除当前正在编辑的这条数据
+
             if (dutyMapper.selectCount(overlapCheck) > 0) {
                 return Result.error("该人员在所选时间段已有排班（时间冲突），请调整后重试");
             }
@@ -223,10 +261,11 @@ public class AdminServiceImpl implements AdminService {
 
         if ("visitor".equals(user.getRole())) {
             LambdaQueryWrapper<Duty> overlapCheck = new LambdaQueryWrapper<>();
-            overlapCheck.eq(Duty::getUserId, duty.getUserId())
-                        .eq(Duty::getDutyDate, duty.getDutyDate())
-                        .lt(Duty::getStartTime, realEnd)
-                        .gt(Duty::getEndTime, userStart);
+            overlapCheck.eq(Duty::getUserId, duty.getUserId())       // 同一个人
+                    .eq(Duty::getDutyDate, duty.getDutyDate())   // 同一天
+                    .lt(Duty::getStartTime, realEnd)              // 已有排班开始 < 本次结束
+                    .gt(Duty::getEndTime, userStart);            // 已有排班结束 > 本次开始
+
             if (dutyMapper.selectCount(overlapCheck) > 0) {
                 return Result.error("该初访员在所选时间段已有排班（时间冲突），请调整后重试");
             }
@@ -234,19 +273,21 @@ public class AdminServiceImpl implements AdminService {
             dutyMapper.insert(duty);
             return Result.success();
         }
-
+//实现一次性批量生成未来 8 周同时间排班，并提前校验 8 周内所有日期是否存在时间冲突，再循环插入数据。
         List<LocalDate> eightWeekDates = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
+            // 基准日期 累加 i 周
             eightWeekDates.add(duty.getDutyDate().plusWeeks(i));
         }
         LambdaQueryWrapper<Duty> overlapCheck = new LambdaQueryWrapper<>();
-        overlapCheck.eq(Duty::getUserId, duty.getUserId())
-                    .in(Duty::getDutyDate, eightWeekDates)
-                    .lt(Duty::getStartTime, realEnd)
-                    .gt(Duty::getEndTime, userStart);
+        overlapCheck.eq(Duty::getUserId, duty.getUserId())// 1. 同一个用户
+                    .in(Duty::getDutyDate, eightWeekDates) // 2.日期落在未来8周范围内
+                    .lt(Duty::getStartTime, realEnd) // 3. 已有排班开始时间 < 本次排班结束时间
+                    .gt(Duty::getEndTime, userStart);// 4. 已有排班结束时间 > 本次排班开始时间
         if (dutyMapper.selectCount(overlapCheck) > 0) {
             return Result.error("该咨询师在未来 8 周中存在时间段冲突，请调整后重试");
         }
+//   循环遍历 8 周日期，逐行创建排班对象并单条插入数据库，每条记录仅dutyDate不同，其余字段复用统一值
         for (LocalDate date : eightWeekDates) {
             Duty item = new Duty();
             item.setUserId(duty.getUserId());
@@ -268,14 +309,16 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public Result<List<Duty>> autoGenerate(Long userId, String dutyDate) {
+        // 查询时间配置表第一条规则
         TimeConfig cfg = timeConfigMapper.selectList(null).stream().findFirst().orElse(null);
         if (cfg == null) return Result.error("请先配置时间规则");
-
+        // 解析配置参数：单段时长、间隔分钟、每日开始/结束小时
         int duration  = cfg.getSingleDuration();
         int interval  = cfg.getIntervalMinute();
         int startHour = cfg.getDailyStartHour();
         int endHour   = cfg.getDailyEndHour();
 
+        // 校验：该用户当天是否已存在排班
         LambdaQueryWrapper<Duty> check = new LambdaQueryWrapper<>();
         check.eq(Duty::getUserId, userId)
              .eq(Duty::getDutyDate, LocalDate.parse(dutyDate));
@@ -284,13 +327,21 @@ public class AdminServiceImpl implements AdminService {
         }
 
         List<Duty> result = new ArrayList<>();
+        // 初始化当日排班起始时间（整点）
         LocalTime current = LocalTime.of(startHour, 0);
+        // 当日排班最晚截止时间（整点）
         LocalTime limit   = LocalTime.of(endHour, 0);
-
+        // 循环生成排班
+//        假设 startHour=8、endHour=12、duration=30、interval=10
+//        08:00 ~ 08:30
+//        08:40 ~ 09:10
+//…… 直到结束时间超过 12:00 停止
         while (true) {
+            // 计算当前时段结束时间
             LocalTime endTime = current.plusMinutes(duration);
             if (endTime.isAfter(limit)) break;
 
+            // 封装排班对象并单条插入数据库
             Duty duty = new Duty();
             duty.setUserId(userId);
             duty.setDutyDate(LocalDate.parse(dutyDate));
@@ -301,7 +352,7 @@ public class AdminServiceImpl implements AdminService {
             duty.setRemark("自动生成");
             dutyMapper.insert(duty);
             result.add(duty);
-
+            // 下一段开始时间 = 当前结束时间 + 间隔分钟
             current = endTime.plusMinutes(interval);
         }
 
@@ -310,26 +361,36 @@ public class AdminServiceImpl implements AdminService {
                 : Result.success(result);
     }
 
-    // ===== 初访预约（联表分页）=====
+    // ===== 初访预约（联表分页）========================================================
 
     @Override
     public IPage<FirstVisitVO> getVisitVOPage(Integer pageNum, Integer pageSize,
                                                String status, String studentName) {
+        // 构建分页参数：页码、每页条数
         Page<FirstVisitVO> page = new Page<>(pageNum, pageSize);
+        // 调用自定义SQL/XML分页查询，携带分页+筛选条件
         return firstVisitMapper.selectVisitWithVisitor(page, status, studentName);
     }
 
     @Override
+//    auditVisit 审核接口
+    /**
+     *管理员在后台对学生提交的初访申请做 通过 / 拒绝 操作：
+     * 审核通过时，强制校验咨询师排班冲突、时段人数上限；
+     * 记录审核时间，更新数据库状态；
+     * 根据审核结果、是否修改预约信息，自动给学生推送站内通知。
+     * */
     public Result<Void> auditVisit(FirstVisit firstVisit) {
         if (firstVisit.getId() == null) return Result.error("ID 不能为空");
 
         if ("已通过".equals(firstVisit.getStatus())) {
+            //检查排版是否冲突
             String err = validateVisitorDuty(
                     firstVisit.getVisitorId(),
                     firstVisit.getVisitDate(),
                     firstVisit.getVisitTime());
             if (err != null) return Result.error(err);
-
+            //检查是否超过最大人数
             String maxErr = validateMaxPerson(
                     firstVisit.getVisitorId(),
                     firstVisit.getVisitDate(),
@@ -338,21 +399,27 @@ public class AdminServiceImpl implements AdminService {
             if (maxErr != null) return Result.error(maxErr);
         }
 
+//        LocalDateTime.now()：获取当前系统时间
+//        给实体设置 auditTime（审核时间），记录这条记录是什么时候被审核的
+
         firstVisit.setAuditTime(LocalDateTime.now());
         firstVisitMapper.updateById(firstVisit);
 
-        // ★ 审核结果通知：重新查完整记录，确保 studentId / location 等字段完整
+        // 审核结果通知：重新查完整记录，确保 studentId / location 等字段完整
+        //  ：保证后续发通知时，用到的字段都是数据库里最新、最全的数据。
         FirstVisit full = firstVisitMapper.selectById(firstVisit.getId());
         if (full != null && full.getStudentId() != null) {
 
             if ("已通过".equals(full.getStatus())) {
                 String title;
                 String content;
+//                判断 isModified（是否修改过预约信息
                 boolean modified = Boolean.TRUE.equals(firstVisit.getIsModified());
 
                 if (full.getVisitDate() != null
                         && StringUtils.hasText(full.getVisitTime())
                         && StringUtils.hasText(full.getLocation())) {
+//                    full.getVisitDate()：预约日期（非空）；预约时段、预约地点不是 null
 
                     if (modified) {
                         // 管理员修改了学生原始申请的时间/地点
@@ -399,9 +466,10 @@ public class AdminServiceImpl implements AdminService {
         return Result.success();
     }
 
-    // ===== 初访预约记录管理 =====
+    // ===== 初访预约记录管理 =================================================================
 
     @Override
+//    入参 FirstVisit firstVisit：前端传过来的初访预约表单数据
     public Result<Void> addVisit(FirstVisit firstVisit) {
         String err = validateVisitorDuty(
                 firstVisit.getVisitorId(),
@@ -415,9 +483,14 @@ public class AdminServiceImpl implements AdminService {
                 firstVisit.getVisitTime(),
                 null);
         if (maxErr != null) return Result.error(maxErr);
-
-        firstVisit.setApplyTime(LocalDateTime.now());
-        firstVisit.setCreateTime(LocalDateTime.now());
+/**
+        调用工具方法 validateVisitorDuty，传入：咨询师 ID、预约日期、预约时段
+        功能：校验该咨询师当前时段是否存在排班时间冲突
+        方法有冲突就返回错误字符串，无冲突返回 null
+        如果拿到错误信息，直接返回错误结果，终止后续新增流程
+*/
+        firstVisit.setApplyTime(LocalDateTime.now());//设置申请时间，记录用户提交预约的时刻
+        firstVisit.setCreateTime(LocalDateTime.now());//设置数据创建时间，记录本条记录入库时间
         if (!StringUtils.hasText(firstVisit.getStatus())) {
             firstVisit.setStatus("待审核");
         }
@@ -429,6 +502,7 @@ public class AdminServiceImpl implements AdminService {
     }
 
     @Override
+//    改期 / 重新预约方法。
     public Result<Void> rescheduleVisit(FirstVisit firstVisit) {
         if (firstVisit.getId() == null) return Result.error("ID 不能为空");
 
@@ -437,7 +511,8 @@ public class AdminServiceImpl implements AdminService {
                 firstVisit.getVisitDate(),
                 firstVisit.getVisitTime());
         if (err != null) return Result.error(err);
-
+//调用 validateVisitorDuty：校验新选择的咨询师 + 新日期 + 新时段是否存在排班时间冲突。
+//        改的就是这几个字段
         String maxErr = validateMaxPerson(
                 firstVisit.getVisitorId(),
                 firstVisit.getVisitDate(),
@@ -446,6 +521,7 @@ public class AdminServiceImpl implements AdminService {
         if (maxErr != null) return Result.error(maxErr);
 
         firstVisit.setRescheduleTime(LocalDateTime.now());
+//        给实体设置 rescheduleTime（改期时间），记录本次调整操作的时间。
         firstVisitMapper.updateById(firstVisit);
 
         // ★ 改期通知：重新查完整记录确保字段齐全
@@ -466,33 +542,57 @@ public class AdminServiceImpl implements AdminService {
     }
 
     @Override
+//    查询今日有排班的咨询师列表
     public Result<List<User>> getTodayDutyVisitors() {
         LocalDate today = LocalDate.now();
+//        获取服务器当前系统日期（年月日），作为查询条件
         LambdaQueryWrapper<Duty> wrapper = new LambdaQueryWrapper<>();
+/**    创建 MyBatis-Plus 条件构造器，查询规则：
+        ge = 大于等于
+        筛选 duty_date >= 今日 的所有排班记录（今日及之后排班）
+ */
         wrapper.ge(Duty::getDutyDate, today);
         List<Duty> dutyList = dutyMapper.selectList(wrapper);
-
+//执行查询，拿到今日及往后所有排班数据集合。
+        /**
+         * 使用 Java Stream 流处理：
+         * map(Duty::getUserId)：从排班记录中提取所有咨询师 ID
+         * distinct()：去重（同一个人多条排班只保留一个 ID）
+         * collect(Collectors.toList())：把去重后的 ID 收集成 List<Long>
+         * */
         List<Long> userIds = dutyList.stream()
                 .map(Duty::getUserId).distinct().collect(Collectors.toList());
+//        如果今日及往后没有任何排班（ID 集合为空）
+//直接返回成功 + 空集合，前端展示无数据。
         if (userIds.isEmpty()) return Result.success(Collections.emptyList());
-
+/**
+ * 构建用户查询条件：
+ * in(User::getId, userIds)：用户 ID 在上面提取的排班 ID 列表中
+ * eq(User::getRole, "visitor")：用户角色为 咨询师 / 访客
+ * 作用：只查「今日有排班 + 角色是咨询师」的用户。
+ * */
         LambdaQueryWrapper<User> userWrapper = new LambdaQueryWrapper<>();
         userWrapper.in(User::getId, userIds).eq(User::getRole, "visitor");
         List<User> userList = userMapper.selectList(userWrapper);
         userList.forEach(u -> u.setPassword(null));
         return Result.success(userList);
     }
-
+/**根据用户 ID，查询该用户今日及未来的所有排班，
+ * 再逐个统计每个排班时段下已通过的预约人数，
+ * 最终返回带实时预约人数的排班列表。*/
     @Override
     public Result<List<Duty>> getUserDutyDate(Long userId) {
         LambdaQueryWrapper<Duty> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Duty::getUserId, userId)
-               .ge(Duty::getDutyDate, LocalDate.now())
+        wrapper.eq(Duty::getUserId, userId)//代表 大于等于，只查今天及往后的排班
+               .ge(Duty::getDutyDate, LocalDate.now())//先按排班日期升序排序
                .orderByAsc(Duty::getDutyDate)
                .orderByAsc(Duty::getStartTime);
         List<Duty> list = dutyMapper.selectList(wrapper);
 
         for (Duty duty : list) {
+//            遍历每一条排班记录，逐个统计当前时段已预约人数。
+//            ：如果排班的开始时间 / 结束时间为空
+//            直接把已预约人数 bookedCount 设为 0，跳过后续统计逻辑。
             if (duty.getStartTime() == null || duty.getEndTime() == null) {
                 duty.setBookedCount(0);
                 continue;
@@ -512,6 +612,7 @@ public class AdminServiceImpl implements AdminService {
         return Result.success(list);
     }
 
+//    getVisitStats 预约数据统计接口
     @Override
     public Result<Map<String, Long>> getVisitStats() {
         Map<String, Long> stats = new HashMap<>();
@@ -530,9 +631,10 @@ public class AdminServiceImpl implements AdminService {
     public Result<Void> cancelVisit(Long id) {
         // ★ 取消前先查学生信息，用于发通知
         FirstVisit full = firstVisitMapper.selectById(id);
-
+//先根据 ID 查询整条记录，目的是拿到 studentId（学生 ID），后续发通知使用。
         FirstVisit visit = new FirstVisit();
         visit.setId(id);
+//        执行更新操作：仅把这条记录状态改为「已取消」，数据仍保留在库中（逻辑取消）
         visit.setStatus("cancelled");
         firstVisitMapper.updateById(visit);
 
@@ -563,15 +665,26 @@ public class AdminServiceImpl implements AdminService {
         return Result.success();
     }
 
-    // ===== 统计分析 =====
+    // ===== 统计分析 ==================================================================================
 
     /**
      * 基于 ClosingReport 表，支持按学生 / 咨询师 / 问题类型三个维度汇总。
-     * ★ 咨询师维度新增 totalMinutes（总咨询时长），依据 TimeConfig.singleDuration 计算。
+     第一，按学生统计：先批量查询学生学号做缓存，再按学生 ID 分组，统计每个人的咨询总次数和首次咨询时间，最后按姓名排序；
+     第二，按咨询师统计：先读取系统预设的单次咨询时长，分组后统计咨询师接待的学生数量、总咨询次数，并换算出总服务时长；
+     第三，按问题类型统计：直接按问题名称分组计数，统计每类问题的咨询人次，并按人次从高到低排序。
+     所有统计都使用 Java Stream 流实现，计算完成后统一格式返回，供给前端页面展示和 Excel 导出使用。
      */
     @Override
+//    这是数据统计接口，根据传入的类型和时间范围，
+//    对结案报告做三类统计：按学生统计咨询情况、
+//    按咨询师统计工作量、按心理问题类型统计分布，
+//    结果整理成前端易解析的列表格式返回。
     public Result<List<Map<String, Object>>> getStatSummary(String type, String startDate, String endDate) {
 
+        //        构建查询条件：根据结案日期做范围筛选
+        //ge：大于等于（开始日期）
+        //le：小于等于（结束日期）
+        //查出时间范围内所有结案报告数据，作为后续统计数据源
         LambdaQueryWrapper<ClosingReport> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(startDate)) wrapper.ge(ClosingReport::getEndDate, startDate);
         if (StringUtils.hasText(endDate))   wrapper.le(ClosingReport::getEndDate, endDate);
@@ -588,6 +701,7 @@ public class AdminServiceImpl implements AdminService {
                 uw.in(User::getId, sids);
                 userMapper.selectList(uw).forEach(u -> studentNoMap.put(u.getId(), u.getUsername()));
             }
+//            使用 Stream groupingBy，把所有报告按学生 ID 分组，一人对应多条结案记录。
 
             Map<Long, List<ClosingReport>> grouped = reports.stream()
                     .filter(r -> r.getStudentId() != null)
@@ -613,7 +727,8 @@ public class AdminServiceImpl implements AdminService {
             return Result.success(result);
         }
 
-        // ② 按咨询师汇总：★ 新增 totalMinutes
+        // ② 按咨询师汇总：新增 totalMinutes
+        //统计每位咨询师的服务学生人数、总咨询次数、总咨询时长，最终整理为前端可用的数据格式。
         if ("counselor".equals(type)) {
             // 取单次时长（分钟），用于计算总时长
             TimeConfig cfg = timeConfigMapper.selectList(null).stream().findFirst().orElse(null);
@@ -652,6 +767,7 @@ public class AdminServiceImpl implements AdminService {
                         Map<String, Object> row = new LinkedHashMap<>();
                         row.put("problemType", e.getKey());
                         row.put("count",       e.getValue());
+//                        把该类型对应的咨询人次存入 count 字段
                         return row;
                     })
                     .sorted((a, b) -> Long.compare(
@@ -665,8 +781,14 @@ public class AdminServiceImpl implements AdminService {
     }
 
     /**
-     * 将统计数据导出为 Excel（.xlsx）并写入 response 输出流。
-     * 咨询师维度含"总咨询时长（分钟）"列。
+     * Apache POI
+     * 这个方法是心理咨询系统统计数据 Excel 导出的核心方法，
+     * 支持学生、咨询师、咨询问题类型三类统计数据的 Excel 导出，可搭配时间范围筛选。
+     * 首先我会调用已有的统计方法，根据前端传入的类型和时间范围，获取聚合好的统计数据；
+     * 接着根据统计类型，动态配置 Excel 的表头、取值字段和列宽，实现一套代码适配多类报表。
+     * 然后我提前定义了 4 套统一的单元格样式
+     * ，保证全表样式统一；再创建 Excel 工作表，设置列宽，生成合并后的大标题和带样式的表头行。
+     * 之后循环遍历统计数据，自动区分文本和数字格式，逐行写入 Excel 单元格；、最后对文件名做编码处理，配置 HTTP 响应头触发浏览器下载，同时捕获 IO 异常保证程序稳定。
      */
     @Override
     public void exportStatExcel(String type, String startDate, String endDate,
@@ -776,22 +898,30 @@ public class AdminServiceImpl implements AdminService {
             }
 
             String fileName = java.net.URLEncoder.encode(typeLabel + "咨询统计.xlsx", "UTF-8");
+//            告诉前端 / 浏览器：本次响应的内容是 Excel 2007 及以上格式（.xlsx），不是普通网页。
             response.setContentType(
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+//            设置下载响应头
             response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
+//            强制浏览器不在线打开，直接弹出下载框，并指定下载后的文件名。
             workbook.write(response.getOutputStream());
+//            把内存中创建好的 Excel 文件，写入 HTTP 响应输出流，传给前端。
             response.flushBuffer();
 
         } catch (IOException e) {
             throw new RuntimeException("导出统计 Excel 失败", e);
+//            把生成好的 Excel 文件，通过 HTTP 响应流返回给浏览器，触发浏览器文件下载，同时处理编码和异常。
         }
     }
 
     // ===== 结案报告批量下载 =====
 
     /**
-     * 按学生姓名、咨询师姓名、问题类型、结案日期区间筛选结案报告，
-     * 每份报告生成 Word（.docx）A4 表格，打包为 ZIP 文件输出。
+     这个方法实现结案报告批量打包下载功能。
+     首先根据前端传入的姓名、问题类型、时间范围等条件，筛选出对应的结案报告；如果没有数据，直接返回提示。
+     我先批量查询所有学生学号并缓存，避免循环查库。
+     接着设置响应头，告知浏览器下载 ZIP 压缩包。
+     最后遍历每一份报告，调用工具方法单独生成 Word 文档，再把所有 Word 文件打包进 ZIP，完成批量下载。。
      */
     @Override
     public void batchDownloadReports(String studentName,
@@ -800,6 +930,7 @@ public class AdminServiceImpl implements AdminService {
                                      String startDate,
                                      String endDate,
                                      HttpServletResponse response) {
+        //构造一个多条件查询
 
         LambdaQueryWrapper<ClosingReport> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(studentName))   wrapper.like(ClosingReport::getStudentName,   studentName);
@@ -819,6 +950,10 @@ public class AdminServiceImpl implements AdminService {
         }
 
         // ★ 批量预取学号（username），避免循环内 N 次单条查询
+        //通过 Stream 提取所有不重复的学生 ID；
+        //批量查询用户表，构建 学生ID → 学号 的映射集合；
+        //核心优化：避免循环中反复单条查库，大幅提升接口性能。
+        //
         List<Long> studentIds = reports.stream()
                 .map(ClosingReport::getStudentId)
                 .filter(Objects::nonNull).distinct()
@@ -831,6 +966,8 @@ public class AdminServiceImpl implements AdminService {
         }
 
         try {
+//            设置 ZIP 下载响应头声明响应内容为 ZIP 压缩包；
+//配置下载头，编码处理中文文件名，防止乱码，触发浏览器下载。
             response.setContentType("application/zip");
             response.setHeader("Content-Disposition",
                     "attachment;filename=" + java.net.URLEncoder.encode("结案报告.zip", "UTF-8"));
@@ -840,9 +977,10 @@ public class AdminServiceImpl implements AdminService {
 
         try (ZipOutputStream zipOut = new ZipOutputStream(response.getOutputStream())) {
             for (ClosingReport report : reports) {
+                // 从缓存取学号
                 String studentNo = studentNoMap.getOrDefault(report.getStudentId(),
                         str(report.getStudentId()));
-                // ★ 生成 Word（.docx）而非 Excel
+                // // 调用方法生成单个Word文档字节数组// 将单个Word写入压缩包
                 byte[] docxBytes = buildReportDocx(report, studentNo);
                 String entryName = sanitizeFileName(report.getStudentName())
                         + "_结案报告_" + report.getId() + ".docx";
@@ -857,12 +995,12 @@ public class AdminServiceImpl implements AdminService {
     }
 
     // ===== 私有工具方法 =====
-
+//所选人员、日期、时段是否符合值班安排。
     private String validateVisitorDuty(Long visitorId, LocalDate visitDate, String visitTime) {
         if (visitorId == null) return "请选择初访员！";
         if (visitDate == null) return "请选择初访日期！";
         if (visitDate.isBefore(LocalDate.now())) return "初访日期不能早于今天！";
-
+   //查询该人员当日值班记录，通过查询id和时间段看当前人有没有排版
         LambdaQueryWrapper<Duty> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Duty::getUserId, visitorId).eq(Duty::getDutyDate, visitDate);
         List<Duty> dutyList = dutyMapper.selectList(wrapper);
@@ -870,7 +1008,7 @@ public class AdminServiceImpl implements AdminService {
             return "安排失败：该初访员在 " + visitDate + " 没有值班安排！";
         }
         if (!StringUtils.hasText(visitTime)) return null;
-
+// 解析预约开始时间
         LocalTime visitStart;
         try {
             String startStr = visitTime.contains("-") ? visitTime.split("-")[0] : visitTime;
@@ -879,7 +1017,8 @@ public class AdminServiceImpl implements AdminService {
             return "初访时间格式不正确：" + visitTime;
         }
         final LocalTime vStart = visitStart;
-
+//核心逻辑：anyMatch：遍历刚才查询的人当天所有值班记录，只要有一条满足条件就返回 true
+//        预约开始时间 >= 值班开始时间  并且  预约开始时间 < 值班结束时间
         boolean inRange = dutyList.stream().anyMatch(d -> {
             if (d.getStartTime() == null || d.getEndTime() == null) return false;
             LocalTime dStart = d.getStartTime().truncatedTo(ChronoUnit.MINUTES);
@@ -892,6 +1031,9 @@ public class AdminServiceImpl implements AdminService {
         return null;
     }
 
+    /**
+     * 首先传入初访员id和初访日期，初访时间，通过lamda条件构造器,通过查询id和日期，用dutymapp接口查询返回数值
+     * */
     private String validateMaxPerson(Long visitorId, LocalDate visitDate,
                                      String visitTime, Long excludeId) {
         if (visitorId == null || visitDate == null || !StringUtils.hasText(visitTime)) return null;
@@ -904,18 +1046,20 @@ public class AdminServiceImpl implements AdminService {
             return null;
         }
         final LocalTime vs = visitStart;
-
+       //遍历当天所有值班记录：
+       //过滤出值班开始时间 = 预约开始时间的那条规则
         LambdaQueryWrapper<Duty> dutyWrapper = new LambdaQueryWrapper<>();
         dutyWrapper.eq(Duty::getUserId, visitorId).eq(Duty::getDutyDate, visitDate);
         List<Duty> duties = dutyMapper.selectList(dutyWrapper);
 
+//        把上一步查到的当日所有值班记录转成流式操作
         Duty matchedDuty = duties.stream()
                 .filter(d -> d.getStartTime() != null
                         && d.getStartTime().truncatedTo(ChronoUnit.MINUTES).equals(vs))
                 .findFirst().orElse(null);
 
         if (matchedDuty == null || matchedDuty.getMaxPerson() == null) return null;
-
+        //核心逻辑是查询人数的条件是已通过+id+日期+时间
         LambdaQueryWrapper<FirstVisit> countWrapper = new LambdaQueryWrapper<>();
         countWrapper.eq(FirstVisit::getVisitorId, visitorId)
                     .eq(FirstVisit::getVisitDate, visitDate)
@@ -945,19 +1089,13 @@ public class AdminServiceImpl implements AdminService {
     }
 
     // ===== 结案报告 Word（DOCX）生成 =====
-
+//Apache POI
+//    HSSF / XSSF：操作 Excel
+//    XWPF：操作 .docx 新版 Word（本代码使用）
     /**
-     * 为单份结案报告生成 Word（.docx）字节数组，A4 页面，表格布局，适合打印归档。
-     * <p>
-     * 表格行布局（4 列）：
-     * <pre>
-     *  行0 | 来访者学号   | 值          | 来访者姓名   | 值
-     *  行1 | 来访者性别   | 值          | 来访者院系   | 值
-     *  行2 | 来访者联系电话 | 值（跨3列）
-     *  行3 | 问题类型     | 值          | 咨询总次数   | 值
-     *  行4 | 主要咨询师   | 值          | 咨询日期    | 值
-     *  行5 | 结案结论     | 值（跨3列，较高）
-     * </pre>
+     基于 Apache POI 的 XWPF 组件，动态生成 .docx 格式的心理咨询结案报告 Word 文档。
+     文档为 A4 纸张、标准页边距，采用表格布局展示来访者信息、咨询信息、结案结论，支持单元格跨列合并、
+     自定义背景色、字体样式，最终返回文件字节数组，用于前端下载、打印归档。
      *
      * @param report    结案报告实体
      * @param studentNo 来访者学号（从 user.username 获取）
@@ -1041,6 +1179,7 @@ public class AdminServiceImpl implements AdminService {
 
     /**
      * 填充 4 格行：[标签1 | 值1 | 标签2 | 值2]
+     * 批量给 4 个单元格统一设置文本、样式、宽度，复用代码、保证排版一致。
      */
     private void fillDocRow4(XWPFTableRow row, int[] cw, String labelBg,
                               String lbl1, String val1, String lbl2, String val2) {

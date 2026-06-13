@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import net.suncaper.psychological.common.Result;
 import net.suncaper.psychological.entity.FirstVisit;
 import net.suncaper.psychological.entity.User;
-import net.suncaper.psychological.entity.Notice; //=====【修改1：补充Notice实体导入】=====
+import net.suncaper.psychological.entity.Notice;
 import net.suncaper.psychological.entity.vo.DutyVO;
 import net.suncaper.psychological.entity.vo.FirstVisitVO;
 import net.suncaper.psychological.mapper.FirstVisitMapper;
@@ -30,15 +30,11 @@ public class StudentServiceImpl implements StudentService {
     private final UserMapper userMapper;
     private final FirstVisitMapper firstVisitMapper;
     private final NoticeMapper noticeMapper;
-
     @Resource
     private DutyMapper dutyMapper;
-
-
-
+    // 密码加密、校验工具（BCrypt 加密算法）
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    //=====【修改2：构造方法新增NoticeMapper入参，完成依赖注入】=====
     public StudentServiceImpl(UserMapper userMapper,
                               FirstVisitMapper firstVisitMapper,
                               NoticeMapper noticeMapper) {
@@ -46,7 +42,7 @@ public class StudentServiceImpl implements StudentService {
         this.firstVisitMapper = firstVisitMapper;
         this.noticeMapper = noticeMapper;
     }
-
+    //学生登录
     @Override
     public Result<User> login(User user) {
         if (!user.getUsername().matches("^[0-9]+$")) {
@@ -77,51 +73,32 @@ public class StudentServiceImpl implements StudentService {
         return Result.success(loginUser);
     }
 
-    // ====================== 【只改这里：预约提交时存入问卷分数】 ======================
+    // 新增预约
     @Override
     public Result<Void> submitFirstVisit(FirstVisit firstVisit, Integer score, Boolean isAlert) {
-        System.out.println("【预约提交-前端传来visitorId】：" + firstVisit.getVisitorId());
         firstVisit.setStatus("待审核");
         firstVisit.setCreateTime(LocalDateTime.now());
         firstVisit.setApplyTime(LocalDateTime.now());
-
         // 存入问卷分数 + 预警标记
         firstVisit.setQuestionnaireScore(score);
         firstVisit.setIsAlert(isAlert);
-
-        //====新增：根据studentId查询学生姓名赋值====
-        //==== 修复：使用当前登录学生的ID，不使用前端传来的ID ====
-// 获取当前登录学生（从登录信息里拿，绝对正确）
-        //呆
         User loginStudent = userMapper.selectById(firstVisit.getStudentId());
-
         if (loginStudent != null) {
             firstVisit.setStudentId(loginStudent.getId());   // 强制使用登录学生ID
             firstVisit.setStudentName(loginStudent.getName()); // 强制使用登录学生名字
         }
-        //呆
-
+        //执行新增预约
         int row = firstVisitMapper.insert(firstVisit);
+        // 判断数据库受影响行数，返回操作结果
         return row>0 ? Result.success() : Result.error("保存失败");
     }
+    //查询所有预约记录
     @Override
     public Result<List<FirstVisitVO>> myFirstVisits(Long studentId) {
         List<FirstVisitVO> list = firstVisitMapper.getHistoryByStudentId(studentId);
         return Result.success(list);
     }
-
-    @Override
-    public Result<Void> cancelVisit(Long id) {
-        FirstVisit fv = new FirstVisit();
-        fv.setId(id);
-        fv.setStatus("已撤销");
-        firstVisitMapper.updateById(fv);
-        return Result.success();
-    }
-
-
-
-    // ====================== 【问卷提交：只算分，不操作】 ======================
+    //提交心理问卷答案
     @Override
     public Result<Map<String, Object>> submitQuestionnaire(Long studentId, List<Integer> answerArr) {
         Map<String,Object> map=new HashMap<>();
@@ -156,7 +133,7 @@ public class StudentServiceImpl implements StudentService {
             isAlert = true;
         }
 
-        // 【关键：问卷阶段不更新数据库！】
+        // 封装结果返回前端
         map.put("score", score);
         map.put("level", level);
         map.put("analysis", analysis);
@@ -164,18 +141,18 @@ public class StudentServiceImpl implements StudentService {
         return Result.success(map);
     }
 
-    // ====================== 【查看测评报告：完全不动】 ======================
+    //根据预约id查看问卷测评报告
     @Override
     public Result<Map<String, Object>> getQuestionResult(Long visitId) {
         FirstVisit visit = firstVisitMapper.selectById(visitId);
         if(visit == null){
             return Result.error("预约不存在");
         }
-
+        // 读取问卷分数，空值默认置0
         Integer score = visit.getQuestionnaireScore() == null ? 0 : visit.getQuestionnaireScore();
         String level;
         String analysis;
-
+        // 按分数生成测评报告
         if (score >= 70) {
             level = "正常";
             analysis = "【测评报告】心理状态良好，情绪稳定，无明显困扰。";
@@ -196,34 +173,30 @@ public class StudentServiceImpl implements StudentService {
         res.put("analysis", analysis);
         return Result.success(res);
     }
-
+    //查看学生当前预约
     @Override
     public Result<List<FirstVisitVO>> getCurrentVisit(Long studentId) {
         List<FirstVisitVO> list = firstVisitMapper.getCurrentByStudentId(studentId);
         return Result.success(list);
     }
 
-    @Override
-    public Result<List<FirstVisitVO>> getHistoryVisit(Long studentId) {
-        List<FirstVisitVO> list = firstVisitMapper.getHistoryByStudentId(studentId);
-        return Result.success(list);
-    }
+    //获取咨询师值班排班列表
     @Override
     public Result<List<DutyVO>> getAllDutyWithUserName() {
-        // 必须是这行，调用新建的过滤方法
         List<DutyVO> list = dutyMapper.getVisitorDutyOnly();
         return Result.success(list);
     }
+    //查询学生个人站内通知，按创建时间倒序排列
     @Override
     public Result<List<Notice>> getNoticeList(Long studentId) {
         LambdaQueryWrapper<Notice> wrapper = Wrappers.lambdaQuery();
-        //★修改：getStudentId → getUserId
+        // 根据学生用户ID查询通知，并按时间倒序
         wrapper.eq(Notice::getUserId, studentId)
                 .orderByDesc(Notice::getCreateTime);
         List<Notice> list = noticeMapper.selectList(wrapper);
         return Result.success(list);
     }
-    //呆
+    //学生注册
     @Override
     public Result<User> register(User user) {
         //1、校验学号是否已存在（username=学号唯一）
@@ -242,5 +215,4 @@ public class StudentServiceImpl implements StudentService {
         userMapper.insert(user);
         return Result.success(user);
     }
-    //呆
 }
