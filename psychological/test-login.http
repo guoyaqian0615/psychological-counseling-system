@@ -1,0 +1,27 @@
+### 1. 学生登录
+POST http://localhost:8080/student/login
+Content-Type: application/json
+
+{
+  "username": "student",
+  "password": "123456"
+}
+
+### 2. 心理咨询系统 - 咨询师登录（可切换 role：visitor/assistant/counselor）
+POST http://localhost:8080/counsel/login
+Content-Type: application/json
+
+{
+  "username": "counselor",
+  "password": "123456",
+  "role": "counselor"
+}
+
+### 3. 管理员登录
+POST http://localhost:8080/admin/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "123456"
+}

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="net.suncaper.psychological.mapper.FirstVisitMapper">
+
+    <!-- 初访记录 + 初访员联表查询 -->
+    <select id="selectVisitWithVisitor" resultType="net.suncaper.psychological.entity.vo.FirstVisitVO">
+        SELECT
+        f.*,
+        u.name AS visitorName,
+        u.phone AS visitorPhone
+        FROM first_visit f
+        LEFT JOIN user u ON f.visitor_id = u.id
+
+        <where>
+            <if test="status != null and status != ''">
+                AND f.status = #{status}
+            </if>
+            <if test="studentName != null and studentName != ''">
+                AND f.student_name LIKE CONCAT('%', #{studentName}, '%')
+            </if>
+        </where>
+
+        ORDER BY f.is_emergency DESC, f.is_alert DESC, f.id DESC
+    </select>
+
+    <!-- 1、学生【当前预约】：排除已完成、已撤销 -->
+    <select id="getCurrentByStudentId" resultType="net.suncaper.psychological.entity.vo.FirstVisitVO"> SELECT f.*, u.name AS visitorName, us.name AS studentName FROM first_visit f LEFT JOIN user u ON f.visitor_id = u.id LEFT JOIN user us ON f.student_id = us.id WHERE f.student_id = #{studentId} AND f.status NOT IN ('已完成','已撤销') </select>
+    <!-- 2、学生【全部历史预约】：所有状态全部查出来 -->
+    <select id="getHistoryByStudentId" resultType="net.suncaper.psychological.entity.vo.FirstVisitVO"> SELECT f.*, u.name AS visitorName, us.name AS studentName FROM first_visit f LEFT JOIN user u ON f.visitor_id = u.id LEFT JOIN user us ON f.student_id = us.id WHERE f.student_id = #{studentId} </select>
+
+</mapper>

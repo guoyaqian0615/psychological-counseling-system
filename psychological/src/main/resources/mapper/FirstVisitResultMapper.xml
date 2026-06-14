@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="net.suncaper.psychological.mapper.FirstVisitResultMapper">
+
+    <!-- 初访员历史记录：联表查学生姓名、学号、初访地点 -->
+    <select id="selectVisitorHistory" resultType="net.suncaper.psychological.entity.vo.FirstVisitResultVO">
+        SELECT r.*,
+               f.student_name AS studentName,
+               f.student_id   AS studentId,
+               f.location     AS location
+        FROM first_visit_result r
+                 LEFT JOIN first_visit f ON r.first_visit_id = f.id
+        WHERE f.visitor_id = #{visitorId}
+        <if test="studentName != null and studentName != ''">
+            AND f.student_name LIKE CONCAT('%', #{studentName}, '%')
+        </if>
+    </select>
+
+    <!-- 根据 first_visit_result.id 查详情，联表拿姓名、学号、初访地点 -->
+    <select id="getDetailById" resultType="net.suncaper.psychological.entity.vo.FirstVisitResultVO">
+        SELECT r.*,
+               f.student_name AS studentName,
+               f.student_id   AS studentId,
+               f.location     AS location
+        FROM first_visit_result r
+                 LEFT JOIN first_visit f ON r.first_visit_id = f.id
+        WHERE r.id = #{id}
+    </select>
+
+    <!--
+        助理待安排列表：
+
+        核心修复（防止结案后学生重新出现）：
+          原逻辑仅在 Java 层通过 activeStudentIds 过滤"进行中"的学生，
+          但结案后学生的所有 counseling 记录均变为 '已结案'，
+          导致其不在 activeStudentIds 中，从而绕过过滤、重新出现在列表。
+
+          真正应出现在待安排列表的条件：
+            1. first_visit_result.conclusion = '安排咨询'（初访结论要求安排）
+            2. first_visit.status = '已完成'（初访已完成，尚未进入咨询流程）
+
+          arrangeCounsel() 会将 first_visit.status 更新为 '进行中'，
+          因此安排后该记录不再满足条件二，自然从列表消失。
+          结案时 first_visit.status 保持 '进行中'，同样不满足条件二。
+          两种情况均无需 Java 层额外处理。
+    -->
+    <select id="selectWaitArrangeVO" resultType="net.suncaper.psychological.entity.vo.FirstVisitResultVO">
+        SELECT r.id             AS id,
+               r.first_visit_id AS firstVisitId,
+               r.crisis_level   AS crisisLevel,
+               r.problem_type   AS problemType,
+               r.conclusion     AS conclusion,
+               f.location       AS location,
+               f.student_name   AS studentName,
+               f.student_id     AS studentId
+        FROM first_visit_result r
+                 LEFT JOIN first_visit f ON r.first_visit_id = f.id
+        WHERE r.conclusion = '安排咨询'
+          AND f.status = '已完成'
+        ORDER BY f.is_emergency DESC, f.is_alert DESC, r.id DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.mapper.UserMapper">
+
+    <!-- 结果映射：用户 + 身份证(一对一) + 订单(一对多) -->
+    <resultMap id="UserWithAllMap" type="com.example.entity.User">
+        <id column="u_id" property="id"/>
+        <result column="u_name" property="name"/>
+
+        <!-- 一对一：association -->
+        <association property="idCard" javaType="com.example.entity.IdCard">
+            <id column="ic_id" property="id"/>
+            <result column="ic_card_no" property="cardNo"/>
+            <result column="ic_user_id" property="userId"/>
+        </association>
+
+        <!-- 一对多：collection -->
+        <collection property="orders" ofType="com.example.entity.Order">
+            <id column="o_id" property="id"/>
+            <result column="o_order_no" property="orderNo"/>
+            <result column="o_user_id" property="userId"/>
+        </collection>
+    </resultMap>
+
+    <!-- 查询用户+身份证+所有订单 -->
+    <select id="selectUserWithAll" resultMap="UserWithAllMap">
+        SELECT
+        u.id AS u_id,
+        u.name AS u_name,
+        ic.id AS ic_id,
+        ic.card_no AS ic_card_no,
+        ic.user_id AS ic_user_id,
+        o.id AS o_id,
+        o.order_no AS o_order_no,
+        o.user_id AS o_user_id
+        FROM `user` u
+        LEFT JOIN id_card ic ON u.id = ic.user_id
+        LEFT JOIN `orders` o ON u.id = o.user_id
+        WHERE u.id = #{id}
+    </select>
+
+</mapper>

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.demo.mpdemo.mapper.UserMapper">
+
+    <!-- 1. 自定义删除 -->
+    <delete id="deleteUserById">
+        delete from user where id = #{id}
+    </delete>
+
+    <!-- 2. 自定义插入 -->
+    <insert id="insertUser">
+        insert into user(name, age, email)
+        values(#{name}, #{age}, #{email})
+    </insert>
+
+    <!-- 3. 自定义分页 + 动态SQL -->
+    <select id="selectUserPage" resultType="User">
+        select * from user
+        <where>
+            <if test="name != null and name != ''">
+                and name like concat('%', #{name}, '%')
+            </if>
+            <if test="age != null">
+                and age = #{age}
+            </if>
+        </where>
+    </select>
+
+    <!-- 4. 一对一 -->
+    <resultMap id="userCardMap" type="User">
+        <id column="u_id" property="id"/>
+        <result column="name" property="name"/>
+        <association property="idCard" javaType="IdCard">
+            <id column="c_id" property="id"/>
+            <result column="card_no" property="cardNo"/>
+        </association>
+    </resultMap>
+    <select id="selectUserWithCard" resultMap="userCardMap">
+        select u.id u_id, u.name, c.id c_id, c.card_no
+        from user u left join id_card c on u.id = c.user_id
+        where u.id = #{id}
+    </select>
+
+    <!-- 5. 一对多 -->
+    <resultMap id="userOrderMap" type="User">
+        <id column="u_id" property="id"/>
+        <result column="name" property="name"/>
+        <collection property="orderList" ofType="Order">
+            <id column="o_id" property="id"/>
+            <result column="order_no" property="orderNo"/>
+        </collection>
+    </resultMap>
+    <select id="selectUserWithOrders" resultMap="userOrderMap">
+        select u.id u_id, u.name, o.id o_id, o.order_no
+        from user u
+                 left join `order` o on u.id = o.user_id
+        where u.id = #{id}
+    </select>
+
+</mapper>

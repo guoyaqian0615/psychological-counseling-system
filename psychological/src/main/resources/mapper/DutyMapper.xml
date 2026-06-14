@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<!-- namespace 必须与 Mapper 接口全路径一致 -->
+<mapper namespace="net.suncaper.psychological.mapper.DutyMapper">
+
+    <!-- 基础字段映射：复用 MyBatis-Plus 逻辑，也可自定义 resultMap -->
+    <resultMap id="BaseResultMap" type="net.suncaper.psychological.entity.Duty">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="duty_date" property="dutyDate"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="status" property="status"/>
+        <result column="max_person" property="maxPerson"/>
+        <result column="remark" property="remark"/>
+        <!-- 非数据库字段（@TableField(exist = false)）无需映射 -->
+    </resultMap>
+
+    <!-- 基础字段列表：简化 SQL 编写 -->
+    <sql id="Base_Column_List">
+        id, user_id, duty_date, start_time, end_time, status, max_person, remark
+    </sql>
+
+    <!-- 如需自定义查询，示例：按用户+日期查询排班 -->
+    <select id="selectByUserIdAndDate" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM duty
+        WHERE user_id = #{userId}
+        AND duty_date = #{dutyDate}
+    </select>
+
+    <!-- 如需自定义批量插入（MyBatis-Plus 已有 saveBatch，也可自定义） -->
+    <insert id="batchInsert">
+        INSERT INTO duty (user_id, duty_date, start_time, end_time, status, max_person, remark)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.userId}, #{item.dutyDate}, #{item.startTime}, #{item.endTime}, #{item.status}, #{item.maxPerson}, #{item.remark})
+        </foreach>
+    </insert>
+
+    <!--  新增：排班+咨询师姓名联查，学生预约页面使用  -->
+    <select id="getAllDutyWithUserName" resultType="net.suncaper.psychological.entity.vo.DutyVO"> SELECT d.id, d.user_id AS userId, u.name AS userName, d.duty_date AS dutyDate, d.start_time AS startTime, d.end_time AS endTime, d.status, d.max_person AS maxPerson, d.remark FROM duty d LEFT JOIN user u ON d.user_id = u.id WHERE d.status = '1' </select>
+    <select id="getVisitorDutyOnly" resultType="net.suncaper.psychological.entity.vo.DutyVO"> SELECT d.id, d.user_id as userId, u.name as userName, d.duty_date as dutyDate, d.start_time as startTime, d.end_time as endTime FROM duty d LEFT JOIN `user` u ON d.user_id = u.id WHERE u.role = 'visitor' ORDER BY d.duty_date </select>
+
+</mapper>
